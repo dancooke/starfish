@@ -9,13 +9,13 @@ import subprocess as sp
 import pysam as ps
 from os.path import join, basename, exists
 
-draw_venn = True
+can_draw_venn = True
 
 try:
     import venn
     import matplotlib.pyplot as plt
 except ImportError:
-    draw_venn = False
+    can_draw_venn = False
 
 def call(cmd, quite=True):
     if quite:
@@ -37,12 +37,14 @@ def count_records(vcf_name):
     return sum(1 for rec in vcf)
 
 def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
-            bed_regions=None, all_records=False, squash_ploidy=False):
+            bed_regions=None, all_records=False, squash_ploidy=False, sample=None):
     cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
         cmd += ['--bed-regions', bed_regions]
     if all_records:
         cmd.append('--all-records')
+    if sample is not None:
+        cmd += ['--sample', sample]
     call(cmd)
 
 def intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
@@ -50,7 +52,8 @@ def intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
     run_rtg(args.rtg, args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
             bed_regions=args.regions,
             all_records=args.all_records,
-            squash_ploidy=args.ignore_genotypes)
+            squash_ploidy=args.ignore_genotypes,
+            sample=args.sample)
     lhs_and_rhs = join(args.output, lhs_label + '_and_' + rhs_label + '.vcf.gz')
     rhs_and_lhs = join(args.output, rhs_label + '_and_' + lhs_label + '.vcf.gz')
     lhs_not_rhs = join(args.output, lhs_label + '_not_' + rhs_label + '.vcf.gz')
@@ -111,6 +114,11 @@ def main(args):
     if len(args.variants) < 2:
         print("There must be at least two VCFs to intersect")
         return
+    
+    if args.names is not None:
+        if len(args.variants) != len(args.names):
+            print("There must be one name per VCF")
+            return
     
     if not exists(args.output):
         os.makedirs(args.output)
@@ -175,7 +183,7 @@ def main(args):
                     remove_vcf(isec)
     
     # Make plots
-    if draw_venn:
+    if can_draw_venn and args.names is not None:
         if len(vcfs) < 7:
             venn_points = [[] for _ in range(len(vcfs))]
             venn_labels = {}
@@ -186,11 +194,13 @@ def main(args):
                     vcf = join(args.output, hot_labels + '.vcf.gz')
                     nrecs = count_records(vcf)
                     venn_labels[venn_key] = str(nrecs)
-            if args.names is not None:
-                plot_ven(venn_labels, args.names)
+            fig, ax = plot_ven(venn_labels, args.names)
+            ax.legend_.remove()
+            plt.tight_layout()
+            if args.vennout is None:
+                plt.show()
             else:
-                plot_ven(venn_labels, labels)
-            plt.show()
+                plt.savefig(args.vennout, format='pdf', )
         else:
             print("Venn plots only supported for up to 6 VCFs")
 
@@ -225,10 +235,18 @@ if __name__ == '__main__':
                         default=False,
                         action='store_true',
                         help='Intersect all records')
+    parser.add_argument('--sample',
+                        type=str,
+                        required=False,
+                        help='Sample to compare, only required if multiple samples in VCFs')
     parser.add_argument('--names',
                         nargs='+',
                         type=str,
                         required=False,
                         help='Display names of the VCF files')
+    parser.add_argument('--vennout',
+                        type=str,
+                        required=False,
+                        help='Save Venn diagram in PDF format')
     parsed, unparsed = parser.parse_known_args()
     main(parsed)
