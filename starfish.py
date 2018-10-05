@@ -12,7 +12,7 @@ from os.path import join, basename, exists
 can_draw_venn = True
 
 try:
-    import venn
+    import pyvenn.venn
     import matplotlib.pyplot as plt
 except ImportError:
     can_draw_venn = False
@@ -37,7 +37,7 @@ def count_records(vcf_name):
     return sum(1 for rec in vcf)
 
 def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
-            bed_regions=None, all_records=False, squash_ploidy=False, sample=None):
+            bed_regions=None, all_records=False, squash_ploidy=False, sample=None, threads=None):
     cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
         cmd += ['--bed-regions', bed_regions]
@@ -45,6 +45,8 @@ def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
         cmd.append('--all-records')
     if sample is not None:
         cmd += ['--sample', sample]
+    if threads is not None:
+        cmd += ['--threads', str(threads)]
     call(cmd)
 
 def intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
@@ -53,7 +55,8 @@ def intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
             bed_regions=args.regions,
             all_records=args.all_records,
             squash_ploidy=args.ignore_genotypes,
-            sample=args.sample)
+            sample=args.sample,
+            threads=args.threads)
     lhs_and_rhs = join(args.output, lhs_label + '_and_' + rhs_label + '.vcf.gz')
     rhs_and_lhs = join(args.output, rhs_label + '_and_' + lhs_label + '.vcf.gz')
     lhs_not_rhs = join(args.output, lhs_label + '_not_' + rhs_label + '.vcf.gz')
@@ -248,5 +251,9 @@ if __name__ == '__main__':
                         type=str,
                         required=False,
                         help='Save Venn diagram in PDF format')
+    parser.add_argument('--threads',
+                        type=int,
+                        required=False,
+                        help='Maximum number of threads to use (default is all cores)')
     parsed, unparsed = parser.parse_known_args()
     main(parsed)
