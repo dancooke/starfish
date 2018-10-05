@@ -51,13 +51,17 @@ Will result in the directory `isec` containing the following files:
 
 In other words, the VCF files are labelled (in order) using upper-case letters, and the filenames in the output directory contain records unique to the labels in the filename.
 
+### Restricting comparison to certain regions
+
+By default, all regions in the reference genome (which must be the same for all input VCFs) are used. To restrict comparison to a subset of regions, supply a BED file to the `--regions` option.
+
 ### Ignoring filtered records
 
 By default, records that are filtered are not included in the comparison. To include them add the `--all_records` option the your command.
 
 ### Ignoring genotype mismatches
 
-By default, records will not be matched if the genotypes do not match. 
+By default, records will not be matched if the genotypes do not match. To ignore genotype mismatched (and only compare called alleles), add the `--ignore_genotypes` option.
 
 ## Drawing Venn diagrams
 
