@@ -12,7 +12,7 @@ from os.path import join, basename, exists
 can_draw_venn = True
 
 try:
-    import pyvenn.venn
+    import pyvenn.venn as pv
     import matplotlib.pyplot as plt
 except ImportError:
     can_draw_venn = False
@@ -101,15 +101,15 @@ def naive_intersect(head_vcf, tail_vcfs, tail_mask, out):
 
 def plot_ven(labels, names):
     if len(names) == 2:
-        return venn.venn2(labels, names=names)
+        return pv.venn2(labels, names=names)
     elif len(names) == 3:
-        return venn.venn3(labels, names=names)
+        return pv.venn3(labels, names=names)
     elif len(names) == 4:
-        return venn.venn4(labels, names=names)
+        return pv.venn4(labels, names=names)
     elif len(names) == 5:
-        return venn.venn5(labels, names=names)
+        return pv.venn5(labels, names=names)
     elif len(names) == 6:
-        return venn.venn6(labels, names=names)
+        return pv.venn6(labels, names=names)
     else:
         raise Error("Unsupported Venn")
 
