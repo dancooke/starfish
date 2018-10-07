@@ -5,9 +5,10 @@ import itertools
 import shutil
 import os
 import string
+import sys
 import subprocess as sp
 import pysam as ps
-from os.path import join, basename, exists
+from os.path import join, basename, exists, dirname
 
 can_draw_venn = True
 
@@ -101,6 +102,11 @@ def naive_intersect(head_vcf, tail_vcfs, tail_mask, out):
     else:
         naive_common([head_vcf] + positive_tails, out)
 
+def concat(vcfs, out):
+    assert len(vcfs) > 1
+    cmd = ['bcftools', 'concat', '-a', '-Oz', '-o', out] + vcfs
+    call(cmd)
+
 def plot_ven(labels, names):
     if len(names) == 2:
         return pv.venn2(labels, names=names)
@@ -151,14 +157,12 @@ def main(args):
             if any(tail_mask):
                 hot_labels = labels[i] + ''.join([labels[j + i + 1] for j in range(tail_len) if tail_mask[j]])
                 out_vcf = join(args.output, hot_labels + '.vcf.gz')
-                
                 if i > 0:
                     tail_mask = list(tail_mask)
                     # Need to remove matches with previous VCFs
                     for head in labels[:i]:
                         isecs.append(intersections[head][labels[i]][1])
                         tail_mask.append(0)
-                
                 naive_intersect(vcfs[i], isecs, tail_mask, out_vcf)
                 index_vcf(out_vcf)
     
@@ -176,7 +180,9 @@ def main(args):
             shutil.move(isecs[0], out_vcf)
             shutil.move(isecs[0] + '.tbi', out_vcf + '.tbi')
     
+    # Write README
     with open(join(args.output, 'README.txt'), 'w') as readme:
+        readme.write("Command: " + ' '.join(sys.argv) + '\n\n')
         for label, vcf in labelled_vcfs:
             readme.write(label + ': ' + vcf + '\n')
     
@@ -186,6 +192,26 @@ def main(args):
             for isec in isecs:
                 if exists(isec):
                     remove_vcf(isec)
+    
+    if len(vcfs) > 2:
+        partial_supported_vcfs = [[] for _ in range(len(vcfs) + 1)]
+        for mask in itertools.product([0, 1], repeat=len(vcfs)):
+            if any(mask):
+                hot_labels = ''.join([labels[i] for i, bit in enumerate(mask) if bit])
+                vcf = join(args.output, hot_labels + '.vcf.gz')
+                partial_supported_vcfs[len(hot_labels)].append(vcf)
+        for i, ivcfs in enumerate(partial_supported_vcfs[2:-1], 2):
+            ivcf = join(args.output, str(i) + '.vcf.gz')
+            concat(ivcfs, ivcf)
+            index_vcf(ivcf)
+            iplus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[i:] for vcf in vcfs]
+            iplus_vcf = join(args.output, str(i) + '+.vcf.gz')
+            concat(iplus_vcfs, iplus_vcf)
+            index_vcf(iplus_vcf)
+            iminus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[:i] for vcf in vcfs]
+            iminus_vcf = join(args.output, str(i) + '-.vcf.gz')
+            concat(iminus_vcfs, iminus_vcf)
+            index_vcf(iminus_vcf)
     
     # Make plots
     if can_draw_venn and args.names is not None:
@@ -205,6 +231,8 @@ def main(args):
             if args.vennout is None:
                 plt.show()
             else:
+                if len(dirname(args.vennout)) == 0:
+                    args.vennout = join(args.output, args.vennout)
                 plt.savefig(args.vennout, format='pdf', )
         else:
             print("Venn plots only supported for up to 6 VCFs")
