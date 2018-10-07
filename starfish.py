@@ -43,6 +43,8 @@ def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
         cmd += ['--bed-regions', bed_regions]
     if all_records:
         cmd.append('--all-records')
+    if squash_ploidy:
+        cmd.append('--squash-ploidy')
     if sample is not None:
         cmd += ['--sample', sample]
     if threads is not None:
