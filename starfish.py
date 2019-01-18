@@ -37,8 +37,26 @@ def count_records(vcf_name):
     vcf = ps.VariantFile(vcf_name)
     return sum(1 for rec in vcf)
 
+def has_genotypes(vcf_name):
+    vcf = ps.VariantFile(vcf_name)
+    return len(vcf.header.samples) > 0
+
+def fix_genotypes(in_vcf_name, out_vcf_name, sample, gt='0/1'):
+    bcftools_cmd = ['bcftools', 'view', in_vcf_name]
+    awk_expression = 'BEGIN {FS="\t"; OFS=FS;} {if (NF < 5) print; else if ($1=="#CHROM") print $0, "FORMAT", "' + sample + '"; else print $0, "GT", "' + gt + '";}'
+    awk_cmd = ['awk', awk_expression]
+    bgzip_cmd = ['bgzip']
+    out_vcf = open(out_vcf_name, 'w')
+    bcftools = sp.Popen(bcftools_cmd, stdout=sp.PIPE)
+    awk = sp.Popen(awk_cmd, stdin=bcftools.stdout, stdout=sp.PIPE)
+    bgzip = sp.Popen(bgzip_cmd, stdin=awk.stdout, stdout=out_vcf)
+    bcftools.stdout.close()
+    output = bgzip.communicate()[0]
+    return out_vcf_name
+
 def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
-            bed_regions=None, all_records=False, squash_ploidy=False, sample=None, threads=None):
+            bed_regions=None, all_records=False, squash_ploidy=False,
+            sample=None, threads=None, score_field='QUAL'):
     cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
         cmd += ['--bed-regions', bed_regions]
@@ -50,6 +68,7 @@ def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
         cmd += ['--sample', sample]
     if threads is not None:
         cmd += ['--threads', str(threads)]
+    cmd += ['--vcf-score-field', score_field]
     call(cmd)
 
 def intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
@@ -134,7 +153,16 @@ def main(args):
     if not exists(args.output):
         os.makedirs(args.output)
     
-    vcfs = args.variants
+    vcfs, temp_vcfs = [], []
+    for vcf in args.variants:
+        if args.ignore_genotypes is not None and not has_genotypes(vcf):
+            tmp_vcf = vcf.replace('.vcf', '.fixed.vcf')
+            fix_genotypes(vcf, tmp_vcf, 'SAMPLE')
+            index_vcf(tmp_vcf)
+            temp_vcfs.append(tmp_vcf)
+            vcf = tmp_vcf
+        vcfs.append(vcf)
+    
     labels = string.ascii_uppercase[:len(vcfs)]
     
     if len(vcfs) > len(labels):
@@ -236,6 +264,10 @@ def main(args):
                 plt.savefig(args.vennout, format='pdf', )
         else:
             print("Venn plots only supported for up to 6 VCFs")
+    
+    # Cleanup
+    for vcf in temp_vcfs:
+        remove_vcf(vcf)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
