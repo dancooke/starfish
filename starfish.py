@@ -18,7 +18,7 @@ try:
 except ImportError:
     can_draw_venn = False
 
-def call(cmd, print_cmd=True, quite=False):
+def call(cmd, print_cmd=False, quite=True):
     if print_cmd:
         print(' '.join(cmd))
     if quite:
