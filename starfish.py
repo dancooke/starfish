@@ -18,38 +18,60 @@ try:
 except ImportError:
     can_draw_venn = False
 
-def call(cmd, quite=True):
+def call(cmd, print_cmd=True, quite=False):
+    if print_cmd:
+        print(' '.join(cmd))
     if quite:
         with open(os.devnull, "w") as f:
             sp.call(cmd, stdout=f, stderr=f)
     else:
         sp.call(cmd)
 
-def index_vcf(vcf):
-    call(['tabix', vcf])
+def vcf_index_exists(vcf_fname):
+    return exists(vcf_fname + '.tbi')
 
-def remove_vcf(vcf):
-    os.remove(vcf)
-    if exists(vcf + '.tbi'):
-        os.remove(vcf + '.tbi')
+def index_vcf(vcf_fname, overwrite=True):
+    if overwrite:
+        call(['tabix', '-f', vcf_fname])
+    else:
+        call(['tabix', vcf_fname])
 
-def count_records(vcf_name):
-    vcf = ps.VariantFile(vcf_name)
+def remove_vcf_index(vcf_fname):
+    os.remove(vcf_fname + '.tbi')
+
+def remove_vcf(vcf_fname):
+    os.remove(vcf_fname)
+    if vcf_index_exists(vcf_fname):
+        remove_vcf_index(vcf_fname)
+
+def count_records(vcf_fname):
+    vcf = ps.VariantFile(vcf_fname, 'r')
     return sum(1 for rec in vcf)
 
 def has_genotypes(vcf_name):
     vcf = ps.VariantFile(vcf_name)
-    return len(vcf.header.samples) > 0
+    return vcf.header is not None and len(vcf.header.samples) > 0
 
-def fix_genotypes(in_vcf_name, out_vcf_name, sample, gt='0/1'):
-    bcftools_cmd = ['bcftools', 'view', in_vcf_name]
-    awk_expression = 'BEGIN {FS="\t"; OFS=FS;} {if (NF < 5) print; else if ($1=="#CHROM") print $0, "FORMAT", "' + sample + '"; else print $0, "GT", "' + gt + '";}'
-    awk_cmd = ['awk', awk_expression]
+def drop_genotypes(vcf_fname):
+    tmp_vcf_fname = vcf_fname.replace('.vcf', '.drop_gt_tmp.vcf')
+    bcftools_cmd = ['bcftools', 'view', '-G', '-Oz', '-o', tmp_vcf_fname, vcf_fname]
+    call(bcftools_cmd)
+    os.rename(tmp_vcf_fname, vcf_fname)
+    if vcf_index_exists(vcf_fname):
+        index_vcf(vcf_fname)
+
+def reset_genotypes(in_vcf_name, out_vcf_name, sample, gt='0/1'):
+    bcftools_cmd = ['bcftools', 'view', '-G', in_vcf_name]
+    add_gt_awk_expression = 'BEGIN {FS="\t"; OFS=FS;} {if (NF < 5) print; else if ($1=="#CHROM") print $0, "FORMAT", "' + sample + '"; else print $0, "GT", "' + gt + '";}'
+    add_gt_awk_cmd = ['awk', add_gt_awk_expression]
+    add_gt_hdr_line_awk_expression = '!found && /#CHROM/{print "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">"; found=1}1'
+    add_gt_hdr_line_awk_cmd = ['awk', add_gt_hdr_line_awk_expression]
     bgzip_cmd = ['bgzip']
     out_vcf = open(out_vcf_name, 'w')
     bcftools = sp.Popen(bcftools_cmd, stdout=sp.PIPE)
-    awk = sp.Popen(awk_cmd, stdin=bcftools.stdout, stdout=sp.PIPE)
-    bgzip = sp.Popen(bgzip_cmd, stdin=awk.stdout, stdout=out_vcf)
+    add_gt_awk = sp.Popen(add_gt_awk_cmd, stdin=bcftools.stdout, stdout=sp.PIPE)
+    add_gt_hdr_awk = sp.Popen(add_gt_hdr_line_awk_cmd, stdin=add_gt_awk.stdout, stdout=sp.PIPE)
+    bgzip = sp.Popen(bgzip_cmd, stdin=add_gt_hdr_awk.stdout, stdout=out_vcf)
     bcftools.stdout.close()
     output = bgzip.communicate()[0]
     return out_vcf_name
@@ -155,9 +177,9 @@ def main(args):
     
     vcfs, temp_vcfs = [], []
     for vcf in args.variants:
-        if args.ignore_genotypes is not None and not has_genotypes(vcf):
-            tmp_vcf = vcf.replace('.vcf', '.fixed.vcf')
-            fix_genotypes(vcf, tmp_vcf, 'SAMPLE')
+        if args.ignore_genotypes:
+            tmp_vcf = join(args.output, basename(vcf).replace('.vcf', '.rtg.vcf'))
+            reset_genotypes(vcf, tmp_vcf, 'SAMPLE' if args.sample is None else args.sample)
             index_vcf(tmp_vcf)
             temp_vcfs.append(tmp_vcf)
             vcf = tmp_vcf
@@ -176,7 +198,11 @@ def main(args):
     for (lhs_label, lhs_vcf), (rhs_label, rhs_vcf) in itertools.combinations(labelled_vcfs, 2):
         if lhs_label not in intersections:
             intersections[lhs_label] = {}
-        intersections[lhs_label][rhs_label] = intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args)
+        intersection = intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args)
+        if args.ignore_genotypes:
+            for vcf_fname in intersection:
+                drop_genotypes(vcf_fname)
+        intersections[lhs_label][rhs_label] = intersection
     
     for i in range(len(vcfs)):
         isecs = [intersections[labels[i]][rhs_label][0] for rhs_label in labels[i + 1:]]
@@ -192,6 +218,8 @@ def main(args):
                         isecs.append(intersections[head][labels[i]][1])
                         tail_mask.append(0)
                 naive_intersect(vcfs[i], isecs, tail_mask, out_vcf)
+                if args.ignore_genotypes:
+                    drop_genotypes(out_vcf)
                 index_vcf(out_vcf)
     
     # Find unique records
@@ -226,8 +254,8 @@ def main(args):
         for mask in itertools.product([0, 1], repeat=len(vcfs)):
             if any(mask):
                 hot_labels = ''.join([labels[i] for i, bit in enumerate(mask) if bit])
-                vcf = join(args.output, hot_labels + '.vcf.gz')
-                partial_supported_vcfs[len(hot_labels)].append(vcf)
+                vcf_fname = join(args.output, hot_labels + '.vcf.gz')
+                partial_supported_vcfs[len(hot_labels)].append(vcf_fname)
         for i, ivcfs in enumerate(partial_supported_vcfs[2:-1], 2):
             ivcf = join(args.output, str(i) + '.vcf.gz')
             concat(ivcfs, ivcf)
@@ -250,8 +278,8 @@ def main(args):
                 if any(mask):
                     venn_key = ''.join([str(bit) for bit in mask])
                     hot_labels = ''.join([labels[i] for i, bit in enumerate(mask) if bit])
-                    vcf = join(args.output, hot_labels + '.vcf.gz')
-                    nrecs = count_records(vcf)
+                    vcf_fname = join(args.output, hot_labels + '.vcf.gz')
+                    nrecs = count_records(vcf_fname)
                     venn_labels[venn_key] = str(nrecs)
             fig, ax = plot_ven(venn_labels, args.names)
             ax.legend_.remove()
