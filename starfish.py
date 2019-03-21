@@ -13,6 +13,8 @@ from os.path import join, basename, exists, dirname
 can_draw_venn = True
 
 try:
+    import matplotlib
+    matplotlib.use('Agg')
     import pyvenn.venn as pv
     import matplotlib.pyplot as plt
 except ImportError:
