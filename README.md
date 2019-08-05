@@ -61,7 +61,16 @@ By default, records that are filtered are not included in the comparison. To inc
 
 ### Ignoring genotype mismatches
 
-By default, records will not be matched if the genotypes do not match. To ignore genotype mismatched (and only compare called alleles), add the `--ignore_genotypes` option.
+By default, records will not be matched if the genotypes do not match. To ignore genotype mismatched (and only compare called alleles), specify the sample to compare as `ALT`:
+
+```shell
+./starfish \
+    --rtg rtg \
+    --sdf reference_sdf \
+    -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
+    -O isec \
+    --sample ALT
+```
 
 ## Drawing Venn diagrams
 
@@ -76,7 +85,17 @@ Starfish can draw Venn diagrams showing the number of intersected records for up
     --names Octopus GATK4 FreeBayes
 ```
 
-To save the Venn diagram to PDF use the `--vennout` option.
+To save the Venn diagram to PDF use the `--vennout` option:
+
+```shell
+./starfish \
+    --rtg rtg \
+    --sdf reference_sdf \
+    -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
+    -O isec \
+    --names Octopus GATK4 FreeBayes \
+    --vennout venn.pdf
+```
 
 ## Limiations
 
