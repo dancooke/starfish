@@ -254,7 +254,8 @@ def main(args):
             index_vcf(iminus_vcf)
     
     # Make plots
-    if can_draw_venn and args.names is not None:
+    if can_draw_venn and args.vennout is not None:
+        names = args.names if args.names is not None else labels
         if len(vcfs) < 7:
             venn_points = [[] for _ in range(len(vcfs))]
             venn_labels = {}
