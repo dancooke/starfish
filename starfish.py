@@ -273,7 +273,7 @@ def main(args):
             else:
                 if len(dirname(args.vennout)) == 0:
                     args.vennout = join(args.output, args.vennout)
-                plt.savefig(args.vennout, format='pdf', )
+                plt.savefig(args.vennout, format=args.vennout_format)
         else:
             print("Venn plots only supported for up to 6 VCFs")
 
@@ -316,7 +316,11 @@ if __name__ == '__main__':
     parser.add_argument('--vennout',
                         type=str,
                         required=False,
-                        help='Save Venn diagram in PDF format')
+                        help='Save Venn diagram to file')
+    parser.add_argument('--vennout-format',
+                        type=str,
+                        default='pdf',
+                        help='File format to save Venn diagram')
     parser.add_argument('--threads',
                         type=int,
                         required=False,
