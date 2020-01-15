@@ -132,18 +132,18 @@ def naive_complement(head_vcf, tail_vcfs, out, debug=False):
     cmd = [bcftools, 'isec', '-C', '-n=1', '-w1', '-Oz', '-o', out, head_vcf] + tail_vcfs
     call(cmd, print_cmd=debug, quite=not debug)
 
-def naive_intersect(head_vcf, tail_vcfs, tail_mask, out):
+def naive_intersect(head_vcf, tail_vcfs, tail_mask, out, debug=False):
     positive_tails = [tail_vcfs[i] for i, mask in enumerate(tail_mask) if mask]
     assert len(positive_tails) > 0
     negative_tails = [tail_vcfs[i] for i, mask in enumerate(tail_mask) if not mask]
     if len(negative_tails) > 0:
         common_positive_temp_vcf = out + '.temp'
-        naive_common([head_vcf] + positive_tails, common_positive_temp_vcf)
+        naive_common([head_vcf] + positive_tails, common_positive_temp_vcf, debug=debug)
         index_vcf(common_positive_temp_vcf)
-        naive_complement(common_positive_temp_vcf, negative_tails, out)
+        naive_complement(common_positive_temp_vcf, negative_tails, out, debug=debug)
         remove_vcf(common_positive_temp_vcf)
     else:
-        naive_common([head_vcf] + positive_tails, out)
+        naive_common([head_vcf] + positive_tails, out, debug=debug)
 
 def concat(vcfs, out, remove_duplicates=True, debug=False):
     assert len(vcfs) > 1
