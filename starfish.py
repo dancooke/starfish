@@ -20,6 +20,10 @@ try:
 except ImportError:
     can_draw_venn = False
 
+bcftools = 'bcftools'
+tabix = 'tabix'
+rtg = 'rtg'
+
 def call(cmd, print_cmd=False, quite=True):
     if print_cmd:
         print(' '.join(cmd))
@@ -34,9 +38,9 @@ def vcf_index_exists(vcf_fname):
 
 def index_vcf(vcf_fname, overwrite=True):
     if overwrite:
-        call(['tabix', '-f', vcf_fname])
+        call([tabix, '-f', vcf_fname])
     else:
-        call(['tabix', vcf_fname])
+        call([tabix, vcf_fname])
 
 def remove_vcf_index(vcf_fname):
     os.remove(vcf_fname + '.tbi')
@@ -50,11 +54,12 @@ def count_records(vcf_fname):
     vcf = ps.VariantFile(vcf_fname, 'r')
     return sum(1 for rec in vcf)
 
-def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
+def run_rtg(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
             bed_regions=None, all_records=False,
             ref_overlap=False, squash_ploidy=False,
             ignore_genotypes=False, sample=None,
-            score_field='QUAL', threads=None):
+            score_field='QUAL', threads=None,
+            debug=False):
     cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
         cmd += ['--bed-regions', bed_regions]
@@ -71,23 +76,24 @@ def run_rtg(rtg, ref_sdf, lhs_vcf, rhs_vcf, out_dir,
     if threads is not None:
         cmd += ['--threads', str(threads)]
     cmd += ['--vcf-score-field', score_field]
-    call(cmd)
+    call(cmd, print_cmd=debug, quite=not debug)
 
 def make_empty_vcf(vcf_fname, template_vcf_fname, index=True):
-    bcftools_cmd = ['bcftools', 'view', '-h', '-Oz', '-o', vcf_fname, template_vcf_fname]
+    bcftools_cmd = [bcftools, 'view', '-h', '-Oz', '-o', vcf_fname, template_vcf_fname]
     call(bcftools_cmd)
     if index:
         index_vcf(vcf_fname)
 
-def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
+def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
     tmp_dir = join(args.output, 'temp')
-    run_rtg(args.rtg, args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
+    run_rtg(args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
             bed_regions=args.regions,
             all_records=args.all_records,
             ref_overlap=args.ref_overlap,
             squash_ploidy=args.sample == "ALT",
             sample=args.sample,
-            threads=args.threads)
+            threads=args.threads,
+            debug=debug)
     lhs_and_rhs = join(args.output, lhs_label + '_and_' + rhs_label + '.vcf.gz')
     rhs_and_lhs = join(args.output, rhs_label + '_and_' + lhs_label + '.vcf.gz')
     lhs_not_rhs = join(args.output, lhs_label + '_not_' + rhs_label + '.vcf.gz')
@@ -116,15 +122,15 @@ def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args):
     shutil.rmtree(tmp_dir)
     return lhs_and_rhs, rhs_and_lhs, lhs_not_rhs, rhs_not_lhs
 
-def naive_common(vcfs, out):
+def naive_common(vcfs, out, debug=False):
     assert len(vcfs) > 1
-    cmd = ['bcftools', 'isec', '-Oz', '-o', out, '-n=' + str(len(vcfs)), '-w1'] + vcfs
-    call(cmd)
+    cmd = [bcftools, 'isec', '-Oz', '-o', out, '-n=' + str(len(vcfs)), '-w1'] + vcfs
+    call(cmd, print_cmd=debug, quite=not debug)
 
-def naive_complement(head_vcf, tail_vcfs, out):
+def naive_complement(head_vcf, tail_vcfs, out, debug=False):
     assert len(tail_vcfs) > 0
-    cmd = ['bcftools', 'isec', '-C', '-n=1', '-w1', '-Oz', '-o', out, head_vcf] + tail_vcfs
-    call(cmd)
+    cmd = [bcftools, 'isec', '-C', '-n=1', '-w1', '-Oz', '-o', out, head_vcf] + tail_vcfs
+    call(cmd, print_cmd=debug, quite=not debug)
 
 def naive_intersect(head_vcf, tail_vcfs, tail_mask, out):
     positive_tails = [tail_vcfs[i] for i, mask in enumerate(tail_mask) if mask]
@@ -139,13 +145,13 @@ def naive_intersect(head_vcf, tail_vcfs, tail_mask, out):
     else:
         naive_common([head_vcf] + positive_tails, out)
 
-def concat(vcfs, out, remove_duplicates=True):
+def concat(vcfs, out, remove_duplicates=True, debug=False):
     assert len(vcfs) > 1
-    cmd = ['bcftools', 'concat', '-a', '-Oz', '-o', out]
+    cmd = [bcftools, 'concat', '-a', '-Oz', '-o', out]
     if remove_duplicates:
         cmd.append('-D')
     cmd += vcfs
-    call(cmd)
+    call(cmd, print_cmd=debug, quite=not debug)
 
 def plot_ven(labels, names):
     if len(names) == 2:
@@ -171,6 +177,11 @@ def main(args):
             print("There must be one name per VCF")
             return
     
+    global rtg
+    rtg = args.rtg
+    global bcftools
+    bcftools = args.bcftools
+    
     if not exists(args.output):
         os.makedirs(args.output)
         
@@ -188,7 +199,7 @@ def main(args):
     for (lhs_label, lhs_vcf), (rhs_label, rhs_vcf) in itertools.combinations(labelled_vcfs, 2):
         if lhs_label not in intersections:
             intersections[lhs_label] = {}
-        intersections[lhs_label][rhs_label] = rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args)
+        intersections[lhs_label][rhs_label] = rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=args.verbose)
     
     for i in range(len(vcfs)):
         isecs = [intersections[labels[i]][rhs_label][0] for rhs_label in labels[i + 1:]]
@@ -203,7 +214,7 @@ def main(args):
                     for head in labels[:i]:
                         isecs.append(intersections[head][labels[i]][1])
                         tail_mask.append(0)
-                naive_intersect(vcfs[i], isecs, tail_mask, out_vcf)
+                naive_intersect(vcfs[i], isecs, tail_mask, out_vcf, debug=args.verbose)
                 index_vcf(out_vcf)
         
     # Find unique records
@@ -214,7 +225,7 @@ def main(args):
         isecs += [intersections[lhs_label][label][3] for lhs_label in labels[:i]]
         out_vcf = join(args.output, label + '.vcf.gz')
         if len(isecs) > 1:
-            naive_common(isecs, out_vcf)
+            naive_common(isecs, out_vcf, debug=args.verbose)
             index_vcf(out_vcf)
         else:
             shutil.move(isecs[0], out_vcf)
@@ -242,15 +253,15 @@ def main(args):
                 partial_supported_vcfs[len(hot_labels)].append(vcf_fname)
         for i, ivcfs in enumerate(partial_supported_vcfs[2:-1], 2):
             ivcf = join(args.output, str(i) + '.vcf.gz')
-            concat(ivcfs, ivcf)
+            concat(ivcfs, ivcf, debug=args.verbose)
             index_vcf(ivcf)
             iplus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[i:] for vcf in vcfs]
             iplus_vcf = join(args.output, str(i) + '+.vcf.gz')
-            concat(iplus_vcfs, iplus_vcf)
+            concat(iplus_vcfs, iplus_vcf, debug=args.verbose)
             index_vcf(iplus_vcf)
             iminus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[:i] for vcf in vcfs]
             iminus_vcf = join(args.output, str(i) + '-.vcf.gz')
-            concat(iminus_vcfs, iminus_vcf)
+            concat(iminus_vcfs, iminus_vcf, debug=args.verbose)
             index_vcf(iminus_vcf)
     
     # Make plots
@@ -266,7 +277,7 @@ def main(args):
                     vcf_fname = join(args.output, hot_labels + '.vcf.gz')
                     nrecs = count_records(vcf_fname)
                     venn_labels[venn_key] = str(nrecs)
-            fig, ax = plot_ven(venn_labels, args.names)
+            fig, ax = plot_ven(venn_labels, names)
             ax.legend_.remove()
             plt.tight_layout()
             if args.vennout is None:
@@ -285,10 +296,6 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='VCF files to intersect')
-    parser.add_argument('--rtg', 
-                        type=str,
-                        required=True,
-                        help='RTG Tools binary')
     parser.add_argument('--sdf',
                         type=str,
                         required=True,
@@ -330,5 +337,17 @@ if __name__ == '__main__':
                         default=False,
                         action='store_true',
                         help='Call RTG vcfeval with "ref-overlap" option')
+    parser.add_argument('--rtg', 
+                        type=str,
+                        default='rtg',
+                        help='RTG Tools binary')
+    parser.add_argument('--bcftools', 
+                        type=str,
+                        default='bcftools',
+                        help='bcftools binary')
+    parser.add_argument('--verbose',
+                        default=False,
+                        action='store_true',
+                        help='Print executed commands and command output')
     parsed, unparsed = parser.parse_known_args()
     main(parsed)
