@@ -129,7 +129,7 @@ def naive_common(vcfs, out, debug=False):
 
 def naive_complement(head_vcf, tail_vcfs, out, debug=False):
     assert len(tail_vcfs) > 0
-    cmd = [bcftools, 'isec', '-C', '-n=1', '-w1', '-Oz', '-o', out, head_vcf] + tail_vcfs
+    cmd = [bcftools, 'isec', '-C', '-w1', '-Oz', '-o', out, head_vcf] + tail_vcfs
     call(cmd, print_cmd=debug, quite=not debug)
 
 def naive_intersect(head_vcf, tail_vcfs, tail_mask, out, debug=False):
