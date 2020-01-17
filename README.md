@@ -22,9 +22,8 @@ git clone --recursive https://github.com/dancooke/starfish
 
 ## Usage
 
-There are four required options:
+There are just three required options:
 
-- `--rtg`: The RTG Tools binary
 - `--sdf`: The RTG Tools SDF reference directory (use `rtg format`)
 - `--variants` (short `-V`): A list of VCF files to intersect.
 - `--output` (short `-O`): A directory path to write intersections.
@@ -33,7 +32,6 @@ For example:
 
 ```shell
 ./starfish \
-    --rtg rtg \
     --sdf reference_sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec
