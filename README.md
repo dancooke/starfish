@@ -63,7 +63,6 @@ By default, records will not be matched if the genotypes do not match. To ignore
 
 ```shell
 ./starfish \
-    --rtg rtg \
     --sdf reference_sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
@@ -76,7 +75,6 @@ Starfish can draw Venn diagrams showing the number of intersected records for up
 
 ```shell
 ./starfish \
-    --rtg rtg \
     --sdf reference_sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
@@ -87,7 +85,6 @@ To save the Venn diagram to PDF use the `--vennout` option:
 
 ```shell
 ./starfish \
-    --rtg rtg \
     --sdf reference_sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
