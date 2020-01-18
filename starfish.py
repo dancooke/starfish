@@ -153,6 +153,28 @@ def concat(vcfs, out, remove_duplicates=True, debug=False):
     cmd += vcfs
     call(cmd, print_cmd=debug, quite=not debug)
 
+def merge(vcfs, out, force_samples=True, debug=False):
+    assert len(vcfs) > 1
+    cmd = [bcftools, 'merge', '-Oz', '-o', out]
+    if force_samples:
+        cmd.append('--force-samples')
+    cmd += vcfs
+    call(cmd, print_cmd=debug, quite=not debug)
+
+def read_samples(vcf_filename):
+    vcf = ps.VariantFile(vcf_filename)
+    return list(vcf.header.samples)
+
+def can_concat(vcfs):
+    samples = [read_samples(vcf) for vcf in vcfs]
+    return samples[1:] == samples[:-1]
+
+def combine(vcfs, out, debug=False):
+    if can_concat(vcfs):
+        concat(vcfs, out, debug=debug)
+    else:
+        merge(vcfs, out, debug=debug)
+
 def plot_ven(labels, names):
     if len(names) == 2:
         return pv.venn2(labels, names=names)
@@ -253,15 +275,15 @@ def main(args):
                 partial_supported_vcfs[len(hot_labels)].append(vcf_fname)
         for i, ivcfs in enumerate(partial_supported_vcfs[2:-1], 2):
             ivcf = join(args.output, str(i) + '.vcf.gz')
-            concat(ivcfs, ivcf, debug=args.verbose)
+            combine(ivcfs, ivcf, debug=args.verbose)
             index_vcf(ivcf)
             iplus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[i:] for vcf in vcfs]
             iplus_vcf = join(args.output, str(i) + '+.vcf.gz')
-            concat(iplus_vcfs, iplus_vcf, debug=args.verbose)
+            combine(iplus_vcfs, iplus_vcf, debug=args.verbose)
             index_vcf(iplus_vcf)
             iminus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[:i] for vcf in vcfs]
             iminus_vcf = join(args.output, str(i) + '-.vcf.gz')
-            concat(iminus_vcfs, iminus_vcf, debug=args.verbose)
+            combine(iminus_vcfs, iminus_vcf, debug=args.verbose)
             index_vcf(iminus_vcf)
     
     # Make plots
