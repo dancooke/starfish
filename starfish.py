@@ -318,7 +318,7 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='VCF files to intersect')
-    parser.add_argument('--sdf',
+    parser.add_argument('-t', '--sdf',
                         type=str,
                         required=True,
                         help='RTG Tools SDF reference index')
@@ -330,7 +330,7 @@ if __name__ == '__main__':
                         type=str,
                         required=False,
                         help='regions in BED format to perform intersection')
-    parser.add_argument('--all_records',
+    parser.add_argument('--all-records',
                         default=False,
                         action='store_true',
                         help='Intersect all records')
@@ -355,7 +355,7 @@ if __name__ == '__main__':
                         type=int,
                         required=False,
                         help='Maximum number of threads to use (default is all cores)')
-    parser.add_argument('--ref_overlap',
+    parser.add_argument('--ref-overlap',
                         default=False,
                         action='store_true',
                         help='Call RTG vcfeval with "ref-overlap" option')

@@ -24,7 +24,7 @@ git clone --recursive https://github.com/dancooke/starfish
 
 There are just three required options:
 
-- `--sdf`: The RTG Tools SDF reference directory (use `rtg format`)
+- `--sdf` (short `-t`): The RTG Tools SDF reference directory (use `rtg format`)
 - `--variants` (short `-V`): A list of VCF files to intersect.
 - `--output` (short `-O`): A directory path to write intersections.
 
@@ -32,7 +32,7 @@ For example:
 
 ```shell
 ./starfish \
-    --sdf reference_sdf \
+    -t reference.sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec
 ```
@@ -55,7 +55,7 @@ By default, all regions in the reference genome (which must be the same for all 
 
 ### Ignoring filtered records
 
-By default, records that are filtered are not included in the comparison. To include them add the `--all_records` option the your command.
+By default, records that are filtered are not included in the comparison. To include them add the `--all-records` option the your command.
 
 ### Ignoring genotype mismatches
 
@@ -63,7 +63,7 @@ By default, records will not be matched if the genotypes do not match. To ignore
 
 ```shell
 ./starfish \
-    --sdf reference_sdf \
+    -t reference.sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
     --sample ALT
@@ -75,7 +75,7 @@ Starfish can draw Venn diagrams showing the number of intersected records for up
 
 ```shell
 ./starfish \
-    --sdf reference_sdf \
+    -t reference.sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
     --names Octopus GATK4 FreeBayes
@@ -85,7 +85,7 @@ To save the Venn diagram to PDF use the `--vennout` option:
 
 ```shell
 ./starfish \
-    --sdf reference_sdf \
+    -t reference.sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
     --names Octopus GATK4 FreeBayes \
@@ -94,6 +94,8 @@ To save the Venn diagram to PDF use the `--vennout` option:
 
 ## Limiations
 
-Since RTG Tools vcfeval is used to compare VCF files, starfish inherits all limitations of this tool. Namely:
+Starfish has a number of limitations:
 
+- Only haploid and diploid genotype comparisons are supported (due to RTGTools vcfeval).
 - Only one sample can be compared. You can use the `--sample` option if your VCFs have multiple samples, but the given sample must be present in all input VCFs.
+- The number of unique intersections grows exponentially with the number of input VCFs.
