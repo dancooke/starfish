@@ -58,7 +58,9 @@ def run_rtg(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
             bed_regions=None, all_records=False,
             ref_overlap=False, squash_ploidy=False,
             ignore_genotypes=False, sample=None,
-            score_field='QUAL', threads=None,
+            score_field='QUAL',
+            ploidy=None,
+            threads=None,
             debug=False):
     cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
@@ -75,6 +77,8 @@ def run_rtg(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
         cmd += ['--sample', sample]
     if threads is not None:
         cmd += ['--threads', str(threads)]
+    if ploidy is not None:
+        cmd += ['--Xdefault-ploidy', str(ploidy)]
     cmd += ['--vcf-score-field', score_field]
     call(cmd, print_cmd=debug, quite=not debug)
 
@@ -84,7 +88,7 @@ def make_empty_vcf(vcf_fname, template_vcf_fname, index=True):
     if index:
         index_vcf(vcf_fname)
 
-def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
+def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, ploidy=None, debug=False):
     tmp_dir = join(args.output, 'temp')
     run_rtg(args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
             bed_regions=args.regions,
@@ -92,6 +96,7 @@ def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
             ref_overlap=args.ref_overlap,
             squash_ploidy=args.sample == "ALT",
             sample=args.sample,
+            ploidy=ploidy,
             threads=args.threads,
             debug=debug)
     lhs_and_rhs = join(args.output, lhs_label + '_and_' + rhs_label + '.vcf.gz')
@@ -221,7 +226,7 @@ def main(args):
     for (lhs_label, lhs_vcf), (rhs_label, rhs_vcf) in itertools.combinations(labelled_vcfs, 2):
         if lhs_label not in intersections:
             intersections[lhs_label] = {}
-        intersections[lhs_label][rhs_label] = rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=args.verbose)
+        intersections[lhs_label][rhs_label] = rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, ploidy=args.ploidy, debug=args.verbose)
     
     for i in range(len(vcfs)):
         isecs = [intersections[labels[i]][rhs_label][0] for rhs_label in labels[i + 1:]]
@@ -338,6 +343,10 @@ if __name__ == '__main__':
                         type=str,
                         required=False,
                         help='Sample to compare (if multiple samples in VCFs) or ALT to ignore genotypes')
+    parser.add_argument('--ploidy', 
+                        type=int,
+                        required=False,
+                        help='Set the default ploidy for comparison')
     parser.add_argument('--names',
                         nargs='+',
                         type=str,
