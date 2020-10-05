@@ -88,15 +88,15 @@ def make_empty_vcf(vcf_fname, template_vcf_fname, index=True):
     if index:
         index_vcf(vcf_fname)
 
-def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, ploidy=None, debug=False):
+def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
     tmp_dir = join(args.output, 'temp')
     run_rtg(args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
             bed_regions=args.regions,
             all_records=args.all_records,
             ref_overlap=args.ref_overlap,
-            squash_ploidy=args.sample == "ALT",
+            squash_ploidy=args.squash_ploidy,
             sample=args.sample,
-            ploidy=ploidy,
+            ploidy=args.ploidy,
             threads=args.threads,
             debug=debug)
     lhs_and_rhs = join(args.output, lhs_label + '_and_' + rhs_label + '.vcf.gz')
@@ -226,7 +226,7 @@ def main(args):
     for (lhs_label, lhs_vcf), (rhs_label, rhs_vcf) in itertools.combinations(labelled_vcfs, 2):
         if lhs_label not in intersections:
             intersections[lhs_label] = {}
-        intersections[lhs_label][rhs_label] = rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, ploidy=args.ploidy, debug=args.verbose)
+        intersections[lhs_label][rhs_label] = rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=args.verbose)
     
     for i in range(len(vcfs)):
         isecs = [intersections[labels[i]][rhs_label][0] for rhs_label in labels[i + 1:]]
@@ -335,14 +335,18 @@ if __name__ == '__main__':
                         type=str,
                         required=False,
                         help='regions in BED format to perform intersection')
-    parser.add_argument('--all-records',
-                        default=False,
-                        action='store_true',
-                        help='Intersect all records')
+    parser.add_argument('--squash-ploidy',
+                        type=str,
+                        required=False,
+                        help='Perform haplploid matching - ignore genotype mismatches')
     parser.add_argument('--sample',
                         type=str,
                         required=False,
                         help='Sample to compare (if multiple samples in VCFs) or ALT to ignore genotypes')
+    parser.add_argument('--all-records',
+                        default=False,
+                        action='store_true',
+                        help='Intersect all records')
     parser.add_argument('--ploidy', 
                         type=int,
                         required=False,
