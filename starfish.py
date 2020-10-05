@@ -336,8 +336,8 @@ if __name__ == '__main__':
                         required=False,
                         help='regions in BED format to perform intersection')
     parser.add_argument('--squash-ploidy',
-                        type=str,
-                        required=False,
+                        default=False,
+                        action='store_true',
                         help='Perform haplploid matching - ignore genotype mismatches')
     parser.add_argument('--sample',
                         type=str,
