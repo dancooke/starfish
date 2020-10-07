@@ -52,6 +52,10 @@ def remove_vcf(vcf_filename):
     if vcf_index_exists(vcf_filename):
         remove_vcf_index(vcf_filename)
 
+def decompose_multiallelic(source_vcf, dest_vcf, debug=False):
+    cmd = [bcftools, 'norm', '-m', '-', '--force', '-Oz', '-o', dest_vcf, source_vcf]
+    call(cmd, print_cmd=debug, quite=not debug)
+
 def count_records(vcf_filename):
     vcf = ps.VariantFile(vcf_filename, 'r')
     return sum(1 for rec in vcf)
@@ -63,6 +67,7 @@ def run_vcfeval(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
                 squash_ploidy=False,
                 sample=None,
                 score_field='GQ',
+                decompose=False,
                 ploidy=None,
                 output_mode=None,
                 flag_alternates=False,
@@ -77,8 +82,10 @@ def run_vcfeval(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
         cmd.append('--ref-overlap')
     if squash_ploidy:
         cmd.append('--squash-ploidy')
-    elif sample is not None:
+    if sample is not None:
         cmd += ['--sample', sample]
+    if decompose:
+        cmd.append('--decompose')
     if threads is not None:
         cmd += ['--threads', str(threads)]
     if ploidy is not None:
@@ -153,6 +160,7 @@ def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
                 ref_overlap=args.ref_overlap,
                 squash_ploidy=args.squash_ploidy,
                 sample=args.sample,
+                decompose=args.decompose,
                 ploidy=args.ploidy,
                 output_mode="annotate" if annotate_and_flag_alternative else None,
                 flag_alternates=annotate_and_flag_alternative,
@@ -275,6 +283,15 @@ def main(args):
         print("Maximum number of VCFs to intersect is", len(labels))
         return
     
+    tmp_vcfs = []
+    if args.decompose:
+        for vcf in vcfs:
+            tmp_vcf = args.output / vcf.stem.replace('.vcf', '.decompose.tmp.vcf.gz')
+            decompose_multiallelic(vcf, tmp_vcf)
+            index_vcf(tmp_vcf)
+            tmp_vcfs.append(tmp_vcf)
+        vcfs = tmp_vcfs
+    
     labelled_vcfs = [(labels[i], vcf) for i, vcf in enumerate(vcfs)]
     
     # Intersect all VCFs
@@ -325,6 +342,8 @@ def main(args):
             for isec in isecs:
                 if isec.exists():
                     remove_vcf(isec)
+    for vcf in tmp_vcfs:
+        remove_vcf(vcf)
     
     if len(vcfs) > 2:
         partial_supported_vcfs = [[] for _ in range(len(vcfs) + 1)]
@@ -422,6 +441,10 @@ if __name__ == '__main__':
                         default=False,
                         action='store_true',
                         help='Call RTG vcfeval with "ref-overlap" option')
+    parser.add_argument('--decompose',
+                        default=False,
+                        action='store_true',
+                        help='Decompose multi-allelic and complex alleles')
     parser.add_argument('--rtg', 
                         type=Path,
                         default='rtg',
