@@ -8,7 +8,7 @@ import string
 import sys
 import subprocess as sp
 import pysam as ps
-from os.path import join, basename, exists, dirname
+from pathlib import Path
 
 can_draw_venn = True
 
@@ -26,42 +26,48 @@ rtg = 'rtg'
 
 def call(cmd, print_cmd=False, quite=True):
     if print_cmd:
-        print(' '.join(cmd))
+        print(' '.join(str(c) for c in cmd))
     if quite:
         with open(os.devnull, "w") as f:
             sp.call(cmd, stdout=f, stderr=f)
     else:
         sp.call(cmd)
 
-def vcf_index_exists(vcf_fname):
-    return exists(vcf_fname + '.tbi')
+def vcf_index_exists(vcf_filename):
+    vcf_index_filaneme = vcf_filename.with_suffix(vcf_filename.suffix + '.tbi')
+    return vcf_index_filaneme.exists()
 
-def index_vcf(vcf_fname, overwrite=True):
+def index_vcf(vcf_filename, overwrite=True):
     if overwrite:
-        call([tabix, '-f', vcf_fname])
+        call([tabix, '-f', vcf_filename])
     else:
-        call([tabix, vcf_fname])
+        call([tabix, vcf_filename])
 
-def remove_vcf_index(vcf_fname):
-    os.remove(vcf_fname + '.tbi')
+def remove_vcf_index(vcf_filename):
+    vcf_index_filaneme = vcf_filename.with_suffix(vcf_filename.suffix + '.tbi')
+    vcf_index_filaneme.unlink()
 
-def remove_vcf(vcf_fname):
-    os.remove(vcf_fname)
-    if vcf_index_exists(vcf_fname):
-        remove_vcf_index(vcf_fname)
+def remove_vcf(vcf_filename):
+    vcf_filename.unlink()
+    if vcf_index_exists(vcf_filename):
+        remove_vcf_index(vcf_filename)
 
-def count_records(vcf_fname):
-    vcf = ps.VariantFile(vcf_fname, 'r')
+def count_records(vcf_filename):
+    vcf = ps.VariantFile(vcf_filename, 'r')
     return sum(1 for rec in vcf)
 
-def run_rtg(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
-            bed_regions=None, all_records=False,
-            ref_overlap=False, squash_ploidy=False,
-            ignore_genotypes=False, sample=None,
-            score_field='QUAL',
-            ploidy=None,
-            threads=None,
-            debug=False):
+def run_vcfeval(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
+                bed_regions=None, 
+                all_records=False,
+                ref_overlap=False, 
+                squash_ploidy=False,
+                sample=None,
+                score_field='GQ',
+                ploidy=None,
+                output_mode=None,
+                flag_alternates=False,
+                threads=None,
+                debug=False):
     cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
         cmd += ['--bed-regions', bed_regions]
@@ -71,59 +77,109 @@ def run_rtg(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
         cmd.append('--ref-overlap')
     if squash_ploidy:
         cmd.append('--squash-ploidy')
-    if ignore_genotypes:
-        cmd += ['--sample', 'ALT']
     elif sample is not None:
         cmd += ['--sample', sample]
     if threads is not None:
         cmd += ['--threads', str(threads)]
     if ploidy is not None:
         cmd += ['--Xdefault-ploidy', str(ploidy)]
+    if output_mode is not None:
+        cmd += ['--output-mode', output_mode]
+    if flag_alternates:
+        cmd.append("--XXcom.rtg.vcf.eval.flag-alternates=true")
     cmd += ['--vcf-score-field', score_field]
     call(cmd, print_cmd=debug, quite=not debug)
 
-def make_empty_vcf(vcf_fname, template_vcf_fname, index=True):
-    bcftools_cmd = [bcftools, 'view', '-h', '-Oz', '-o', vcf_fname, template_vcf_fname]
+def split_baseline_annotated(baseline_vcf_filename, tp_vcf_filename, fn_vcf_filename):
+    baseline_vcf = ps.VariantFile(baseline_vcf_filename)
+    tp_vcf = ps.VariantFile(tp_vcf_filename, 'wz', header=baseline_vcf.header)
+    fn_vcf = ps.VariantFile(fn_vcf_filename, 'wz', header=baseline_vcf.header)
+    for rec in baseline_vcf:
+        if rec.info["BASE"] == "TP":
+            tp_vcf.write(rec)
+        elif rec.info["BASE"] == "FN":
+            if "BASE_ALTERNATE" in rec.info:
+                tp_vcf.write(rec)
+            else:
+                fn_vcf.write(rec)
+    tp_vcf.close()
+    index_vcf(tp_vcf_filename)
+    fn_vcf.close()
+    index_vcf(fn_vcf_filename)
+
+def split_calls_annotated(calls_vcf_filename, tp_vcf_filename, fp_vcf_filename):
+    calls_vcf = ps.VariantFile(calls_vcf_filename)
+    tp_vcf = ps.VariantFile(tp_vcf_filename, 'wz', header=calls_vcf.header)
+    fp_vcf = ps.VariantFile(fp_vcf_filename, 'wz', header=calls_vcf.header)
+    for rec in calls_vcf:
+        if rec.info["CALL"] == "TP":
+            tp_vcf.write(rec)
+        elif rec.info["CALL"] == "FP":
+            if "CALL_ALTERNATE" in rec.info:
+                tp_vcf.write(rec)
+            else:
+                fp_vcf.write(rec)
+    tp_vcf.close()
+    index_vcf(tp_vcf_filename)
+    fp_vcf.close()
+    index_vcf(fp_vcf_filename)
+
+def rename_vcf(source, dest):
+    source.rename(dest)
+    source_index = source.with_suffix(source.suffix + '.tbi')
+    if source_index.exists():
+        dest_index = dest.with_suffix(dest.suffix + '.tbi')
+        source_index.rename(dest_index)
+
+def copy_vcf(source, dest):
+    shutil.copyfile(source, dest)
+    source_index = source.with_suffix(source.suffix + '.tbi')
+    if source_index.exists():
+        dest_index = dest.with_suffix(dest.suffix + '.tbi')
+        shutil.copyfile(source_index, dest_index)
+
+def make_empty_vcf(vcf_filename, template_vcf_filename, index=True):
+    bcftools_cmd = [bcftools, 'view', '-h', '-Oz', '-o', vcf_filename, template_vcf_filename]
     call(bcftools_cmd)
     if index:
         index_vcf(vcf_fname)
 
 def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
-    tmp_dir = join(args.output, 'temp')
-    run_rtg(args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
-            bed_regions=args.regions,
-            all_records=args.all_records,
-            ref_overlap=args.ref_overlap,
-            squash_ploidy=args.squash_ploidy,
-            sample=args.sample,
-            ploidy=args.ploidy,
-            threads=args.threads,
-            debug=debug)
-    lhs_and_rhs = join(args.output, lhs_label + '_and_' + rhs_label + '.vcf.gz')
-    rhs_and_lhs = join(args.output, rhs_label + '_and_' + lhs_label + '.vcf.gz')
-    lhs_not_rhs = join(args.output, lhs_label + '_not_' + rhs_label + '.vcf.gz')
-    rhs_not_lhs = join(args.output, rhs_label + '_not_' + lhs_label + '.vcf.gz')
-    tp_baseline = join(tmp_dir, 'tp-baseline.vcf.gz')
-    tp = join(tmp_dir, 'tp.vcf.gz')
-    fn = join(tmp_dir, 'fn.vcf.gz')
-    fp = join(tmp_dir, 'fp.vcf.gz')
-    if exists(tp_baseline):
-        shutil.move(tp_baseline, lhs_and_rhs)
-        shutil.move(tp_baseline + '.tbi', lhs_and_rhs + '.tbi')
-        shutil.move(tp, rhs_and_lhs)
-        shutil.move(tp + '.tbi', rhs_and_lhs + '.tbi')
-        shutil.move(fn, lhs_not_rhs)
-        shutil.move(fn + '.tbi', lhs_not_rhs + '.tbi')
-        shutil.move(fp, rhs_not_lhs)
-        shutil.move(fp + '.tbi', rhs_not_lhs + '.tbi')
+    tmp_dir = args.output / 'temp'
+    annotate_and_flag_alternative = args.squash_ploidy and (args.ploidy is not None and args.ploidy > 2)
+    run_vcfeval(args.sdf, lhs_vcf, rhs_vcf, tmp_dir,
+                bed_regions=args.regions,
+                all_records=args.all_records,
+                ref_overlap=args.ref_overlap,
+                squash_ploidy=args.squash_ploidy,
+                sample=args.sample,
+                ploidy=args.ploidy,
+                output_mode="annotate" if annotate_and_flag_alternative else None,
+                flag_alternates=annotate_and_flag_alternative,
+                threads=args.threads,
+                debug=debug)
+    lhs_and_rhs = args.output / (lhs_label + '_and_' + rhs_label + '.vcf.gz')
+    rhs_and_lhs = args.output / (rhs_label + '_and_' + lhs_label + '.vcf.gz')
+    lhs_not_rhs = args.output / (lhs_label + '_not_' + rhs_label + '.vcf.gz')
+    rhs_not_lhs = args.output / (rhs_label + '_not_' + lhs_label + '.vcf.gz')
+    tp_baseline = tmp_dir / 'tp-baseline.vcf.gz'
+    tp = tmp_dir / 'tp.vcf.gz'
+    fn = tmp_dir / 'fn.vcf.gz'
+    fp = tmp_dir / 'fp.vcf.gz'
+    if annotate_and_flag_alternative:
+        split_baseline_annotated(tmp_dir / 'baseline.vcf.gz', tp_baseline, fn)
+        split_calls_annotated(tmp_dir / 'calls.vcf.gz', tp, fp)
+    if tp_baseline.exists():
+        rename_vcf(tp_baseline, lhs_and_rhs)
+        rename_vcf(tp, rhs_and_lhs)
+        rename_vcf(fn, lhs_not_rhs)
+        rename_vcf(fp, rhs_not_lhs)
     else:
         # then there were no sequences in common (or one/both of the input are empty)
         make_empty_vcf(lhs_and_rhs, lhs_vcf)
         make_empty_vcf(rhs_and_lhs, rhs_vcf)
-        shutil.copyfile(lhs_vcf, lhs_not_rhs)
-        shutil.copyfile(lhs_vcf + '.tbi', lhs_not_rhs + '.tbi')
-        shutil.copyfile(rhs_vcf, rhs_not_lhs)
-        shutil.copyfile(rhs_vcf + '.tbi', rhs_not_lhs + '.tbi')
+        copy_vcf(lhs_vcf, lhs_not_rhs)
+        copy_vcf(rhs_vcf, rhs_not_lhs)
     shutil.rmtree(tmp_dir)
     return lhs_and_rhs, rhs_and_lhs, lhs_not_rhs, rhs_not_lhs
 
@@ -142,7 +198,7 @@ def naive_intersect(head_vcf, tail_vcfs, tail_mask, out, debug=False):
     assert len(positive_tails) > 0
     negative_tails = [tail_vcfs[i] for i, mask in enumerate(tail_mask) if not mask]
     if len(negative_tails) > 0:
-        common_positive_temp_vcf = out + '.temp'
+        common_positive_temp_vcf = out.with_suffix(out.suffix + '.temp')
         naive_common([head_vcf] + positive_tails, common_positive_temp_vcf, debug=debug)
         index_vcf(common_positive_temp_vcf)
         naive_complement(common_positive_temp_vcf, negative_tails, out, debug=debug)
@@ -209,9 +265,9 @@ def main(args):
     global bcftools
     bcftools = args.bcftools
     
-    if not exists(args.output):
-        os.makedirs(args.output)
-        
+    if not args.output.exists():
+        args.output.mkdir(parents=True)
+    
     vcfs = args.variants
     labels = string.ascii_uppercase[:len(vcfs)]
     
@@ -234,7 +290,7 @@ def main(args):
         for tail_mask in itertools.product([0, 1], repeat=tail_len):
             if any(tail_mask):
                 hot_labels = labels[i] + ''.join([labels[j + i + 1] for j in range(tail_len) if tail_mask[j]])
-                out_vcf = join(args.output, hot_labels + '.vcf.gz')
+                out_vcf = args.output / (hot_labels + '.vcf.gz')
                 if i > 0:
                     tail_mask = list(tail_mask)
                     # Need to remove matches with previous VCFs
@@ -250,25 +306,24 @@ def main(args):
         if label in intersections:
             isecs += [isec[2] for _, isec in intersections[label].items()]
         isecs += [intersections[lhs_label][label][3] for lhs_label in labels[:i]]
-        out_vcf = join(args.output, label + '.vcf.gz')
+        out_vcf = args.output / (label + '.vcf.gz')
         if len(isecs) > 1:
             naive_common(isecs, out_vcf, debug=args.verbose)
             index_vcf(out_vcf)
         else:
-            shutil.move(isecs[0], out_vcf)
-            shutil.move(isecs[0] + '.tbi', out_vcf + '.tbi')
+            rename_vcf(isecs[0], out_vcf)
     
     # Write README
-    with open(join(args.output, 'README.txt'), 'w') as readme:
+    with open(args.output / 'README.txt', 'w') as readme:
         readme.write("Command: " + ' '.join(sys.argv) + '\n\n')
         for label, vcf in labelled_vcfs:
-            readme.write(label + ': ' + vcf + '\n')
+            readme.write(label + ': ' + str(vcf) + '\n')
     
     # Cleanup
     for lhs_label, rhs_isecs in intersections.items():
         for rhs_label, isecs in rhs_isecs.items():
             for isec in isecs:
-                if exists(isec):
+                if isec.exists():
                     remove_vcf(isec)
     
     if len(vcfs) > 2:
@@ -276,23 +331,23 @@ def main(args):
         for mask in itertools.product([0, 1], repeat=len(vcfs)):
             if any(mask):
                 hot_labels = ''.join([labels[i] for i, bit in enumerate(mask) if bit])
-                vcf_fname = join(args.output, hot_labels + '.vcf.gz')
+                vcf_fname = args.output / (hot_labels + '.vcf.gz')
                 partial_supported_vcfs[len(hot_labels)].append(vcf_fname)
         for i, ivcfs in enumerate(partial_supported_vcfs[2:-1], 2):
-            ivcf = join(args.output, str(i) + '.vcf.gz')
+            ivcf = args.output / (str(i) + '.vcf.gz')
             combine(ivcfs, ivcf, debug=args.verbose)
             index_vcf(ivcf)
             iplus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[i:] for vcf in vcfs]
-            iplus_vcf = join(args.output, str(i) + '+.vcf.gz')
+            iplus_vcf = args.output / (str(i) + '+.vcf.gz')
             combine(iplus_vcfs, iplus_vcf, debug=args.verbose)
             index_vcf(iplus_vcf)
             iminus_vcfs = ivcfs + [vcf for vcfs in partial_supported_vcfs[:i] for vcf in vcfs]
-            iminus_vcf = join(args.output, str(i) + '-.vcf.gz')
+            iminus_vcf = args.output / (str(i) + '-.vcf.gz')
             combine(iminus_vcfs, iminus_vcf, debug=args.verbose)
             index_vcf(iminus_vcf)
     
     # Make plots
-    if can_draw_venn and args.vennout is not None:
+    if can_draw_venn and args.venn:
         names = args.names if args.names is not None else labels
         if len(vcfs) < 7:
             venn_points = [[] for _ in range(len(vcfs))]
@@ -301,18 +356,13 @@ def main(args):
                 if any(mask):
                     venn_key = ''.join([str(bit) for bit in mask])
                     hot_labels = ''.join([labels[i] for i, bit in enumerate(mask) if bit])
-                    vcf_fname = join(args.output, hot_labels + '.vcf.gz')
+                    vcf_fname = args.output / (hot_labels + '.vcf.gz')
                     nrecs = count_records(vcf_fname)
                     venn_labels[venn_key] = str(nrecs)
             fig, ax = plot_ven(venn_labels, names)
             ax.legend_.remove()
             plt.tight_layout()
-            if args.vennout is None:
-                plt.show()
-            else:
-                if len(dirname(args.vennout)) == 0:
-                    args.vennout = join(args.output, args.vennout)
-                plt.savefig(args.vennout, format=args.vennout_format)
+            plt.savefig(args.output / 'venn.pdf', format=args.vennout_format)
         else:
             print("Venn plots only supported for up to 6 VCFs")
 
@@ -320,7 +370,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-V', '--variants',
                         nargs='+',
-                        type=str,
+                        type=Path,
                         required=True,
                         help='VCF files to intersect')
     parser.add_argument('-t', '--sdf',
@@ -328,11 +378,11 @@ if __name__ == '__main__':
                         required=True,
                         help='RTG Tools SDF reference index')
     parser.add_argument('-O', '--output',
-                        type=str,
+                        type=Path,
                         required=True,
                         help='Output directory')
     parser.add_argument('--regions',
-                        type=str,
+                        type=Path,
                         required=False,
                         help='regions in BED format to perform intersection')
     parser.add_argument('--squash-ploidy',
@@ -356,9 +406,9 @@ if __name__ == '__main__':
                         type=str,
                         required=False,
                         help='Display names of the VCF files')
-    parser.add_argument('--vennout',
-                        type=str,
-                        required=False,
+    parser.add_argument('--venn',
+                        default=False,
+                        action='store_true',
                         help='Save Venn diagram to file')
     parser.add_argument('--vennout-format',
                         type=str,
@@ -373,11 +423,11 @@ if __name__ == '__main__':
                         action='store_true',
                         help='Call RTG vcfeval with "ref-overlap" option')
     parser.add_argument('--rtg', 
-                        type=str,
+                        type=Path,
                         default='rtg',
                         help='RTG Tools binary')
     parser.add_argument('--bcftools', 
-                        type=str,
+                        type=Path,
                         default='bcftools',
                         help='bcftools binary')
     parser.add_argument('--verbose',
