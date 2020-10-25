@@ -47,9 +47,9 @@ def remove_vcf_index(vcf_filename):
     vcf_index_filaneme = vcf_filename.with_suffix(vcf_filename.suffix + '.tbi')
     vcf_index_filaneme.unlink()
 
-def remove_vcf(vcf_filename):
+def remove_vcf(vcf_filename, index=True):
     vcf_filename.unlink()
-    if vcf_index_exists(vcf_filename):
+    if index and vcf_index_exists(vcf_filename):
         remove_vcf_index(vcf_filename)
 
 def decompose_multiallelic(source_vcf, dest_vcf, debug=False):
@@ -149,7 +149,7 @@ def make_empty_vcf(vcf_filename, template_vcf_filename, index=True):
     bcftools_cmd = [bcftools, 'view', '-h', '-Oz', '-o', vcf_filename, template_vcf_filename]
     call(bcftools_cmd)
     if index:
-        index_vcf(vcf_fname)
+        index_vcf(vcf_filename)
 
 def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
     tmp_dir = args.output / 'temp'
