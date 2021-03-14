@@ -59,29 +59,32 @@ By default, records that are filtered are not included in the comparison. To inc
 
 ### Ignoring genotype mismatches
 
-By default, records will not be matched if the genotypes do not match. To ignore genotype mismatched (and only compare called alleles), specify the sample to compare as `ALT`:
+By default, records will not be matched if the genotypes do not match. To ignore genotype mismatches (and only compare called alleles), use the `--squash-ploidy` option:
 
 ```shell
 ./starfish \
     -t reference.sdf \
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
-    --sample ALT
+    --squash-ploidy
+```
+
+### Comparing samples without genotypes
+
+To compare callsets without genotypes; only use `ALT` alleles: 
+
+```shell
+./starfish \
+    -t reference.sdf \
+    -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
+    -O isec \
+    --samples ALT \
+    --squash-ploidy
 ```
 
 ## Drawing Venn diagrams
 
-Starfish can draw Venn diagrams showing the number of intersected records for up to 6 VCFs (if the `pyvenn` package is installed). To do this you need to supply names for each of the VCFs with the `--names` command:
-
-```shell
-./starfish \
-    -t reference.sdf \
-    -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
-    -O isec \
-    --names Octopus GATK4 FreeBayes
-```
-
-To save the Venn diagram to PDF use the `--vennout` option:
+Starfish can draw Venn diagrams showing the number of intersected records for up to 6 VCFs (if the `pyvenn` package is installed). To do this you need to supply names for each of the VCFs with the `--names` option and add the `--venn` command:
 
 ```shell
 ./starfish \
@@ -89,7 +92,7 @@ To save the Venn diagram to PDF use the `--vennout` option:
     -V vcf1.vcf.gz vcf2.vcf.gz vcf3.vcf.gz \
     -O isec \
     --names Octopus GATK4 FreeBayes \
-    --vennout venn.pdf
+    --venn
 ```
 
 ## Limiations

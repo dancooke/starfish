@@ -89,7 +89,7 @@ def run_vcfeval(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
     if threads is not None:
         cmd += ['--threads', str(threads)]
     if ploidy is not None:
-        cmd += ['--Xdefault-ploidy', str(ploidy)]
+        cmd += ['--sample-ploidy', str(ploidy)]
     if output_mode is not None:
         cmd += ['--output-mode', output_mode]
     if flag_alternates:
