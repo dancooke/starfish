@@ -72,8 +72,12 @@ def run_vcfeval(ref_sdf, lhs_vcf, rhs_vcf, out_dir,
                 output_mode=None,
                 flag_alternates=False,
                 threads=None,
+                memory=None,
                 debug=False):
-    cmd = [rtg, 'vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
+    cmd = [rtg]
+    if memory is not None:
+        cmd.append('RTG_MEM=' + memory)
+    cmd += ['vcfeval', '-t', ref_sdf, '-b', lhs_vcf, '-c', rhs_vcf, '-o', out_dir]
     if bed_regions is not None:
         cmd += ['--bed-regions', bed_regions]
     if all_records:
@@ -165,6 +169,7 @@ def rtg_intersect(lhs_label, lhs_vcf, rhs_label, rhs_vcf, args, debug=False):
                 output_mode="annotate" if annotate_and_flag_alternative else None,
                 flag_alternates=annotate_and_flag_alternative,
                 threads=args.threads,
+                memory=args.memory,
                 debug=debug)
     lhs_and_rhs = args.output / (lhs_label + '_and_' + rhs_label + '.vcf.gz')
     rhs_and_lhs = args.output / (rhs_label + '_and_' + lhs_label + '.vcf.gz')
@@ -437,6 +442,10 @@ if __name__ == '__main__':
                         type=int,
                         required=False,
                         help='Maximum number of threads to use (default is all cores)')
+    parser.add_argument('--memory',
+                        type=str,
+                        required=False,
+                        help='Maximum memory that can be used by vcfeval')
     parser.add_argument('--ref-overlap',
                         default=False,
                         action='store_true',
